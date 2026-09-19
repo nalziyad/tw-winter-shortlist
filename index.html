@@ -8,6 +8,9 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
 <style>
 :root{
   --ground:#F2F6FB; --surface:#FFFFFF; --surface2:#E9EFF7; --ink:#142033; --muted:#5E6E86; --line:#D6DFEA;
@@ -168,17 +171,49 @@ th,td{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;verti
 th{font-family:Outfit;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
 td.best{color:var(--good);font-weight:600}
 td img{width:150px;height:100px;object-fit:cover;border-radius:6px;cursor:zoom-in}
+/* verdict */
+.verdict{margin-top:12px;padding:12px 14px;border-radius:12px;background:var(--surface);border:1px solid var(--line)}
+.verdict h2{font-size:18px;margin-bottom:6px}
+.verdict .vrow{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:6px 0;border-top:1px dashed var(--line);cursor:pointer}
+.verdict .vrow:first-of-type{border-top:0}
+.verdict .vrank{font-family:Outfit;font-weight:700;color:var(--muted);width:20px}
+.verdict .vname{font-family:Outfit;font-weight:600}
+.verdict .vavg{font-weight:700;color:var(--star)}
+.verdict .who{display:inline-flex;align-items:center;gap:4px;background:var(--surface2);border-radius:999px;padding:1px 8px;font-size:12px;font-weight:600}
+.verdict .who i{display:inline-block;width:8px;height:8px;border-radius:50%}
+.verdict .vmeta{font-size:13px;color:var(--muted);margin-top:6px}
+.verdict .warn{color:var(--fest);font-weight:600}
+#ftoggle{display:none}
+.pstrip{display:none}
+.mk.hi{outline:3px solid var(--fest);outline-offset:2px}
+.cmpcards{display:none}
 @media (max-width:820px){
-  .card{grid-template-columns:96px 1fr auto;scroll-margin-top:260px}
-  .thumb{width:96px;height:72px}
-  .card .rank{display:none}
-  .card .kv,.card .fac,.card .rate,.card .notes{grid-column:2/-1}
-  .card .acts{flex-wrap:wrap;justify-content:flex-end}
-  .card .price{grid-column:2/3}
-  .card .acts{grid-column:3/4;grid-row:1}
+  .controls{gap:8px;padding-block:8px}
+  .controls .filters{display:none}
+  .controls.fopen .filters{display:flex}
+  .controls .sl-wrap{display:none}
+  .controls.fopen .sl-wrap{display:contents}
+  #ftoggle{display:inline-block}
+  .breakdown{font-size:13px}
+  .card{grid-template-columns:1fr auto;scroll-margin-top:110px;padding:10px}
+  .card>*{grid-column:1/-1}
+  .thumbwrap,.thumb,.card .rank{display:none}
+  .pstrip{display:flex;grid-row:1;overflow-x:auto;scroll-snap-type:x mandatory;gap:6px;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:-10px -10px 0;padding:0 10px}
+  .pstrip::-webkit-scrollbar{display:none}
+  .pstrip img{flex:0 0 86%;height:200px;object-fit:cover;border-radius:10px;scroll-snap-align:start;cursor:zoom-in}
+  .card .nm{grid-column:1;grid-row:2}
+  .card .acts{grid-column:2;grid-row:2;flex-wrap:wrap;justify-content:flex-end;align-self:start}
   .detail{grid-template-columns:1fr}
   .sl input[type=range]{width:100px}
   #lmap{height:380px}
+  .compare .tw{display:none}
+  .cmpcards{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:10px;padding-bottom:6px}
+  .cmpcard{flex:0 0 80%;scroll-snap-align:start;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .cmpcard img{width:100%;height:150px;object-fit:cover;border-radius:8px;margin-bottom:8px}
+  .cmpcard .cr{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px dashed var(--line);font-size:13px}
+  .cmpcard .cr span:first-child{color:var(--muted);flex:0 0 42%}
+  .cmpcard .cr span:last-child{text-align:right}
+  .cmpcard .cr.best span:last-child{color:var(--good);font-weight:600}
 }
 @media (prefers-reduced-motion:reduce){ .toast{transition:none} .card.flash{animation:none} }
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -210,8 +245,10 @@ td img{width:150px;height:100px;object-fit:cover;border-radius:6px;cursor:zoom-i
 
   <div class="people" id="people"></div>
 
+  <section class="verdict" id="verdict" aria-label="Group verdict"></section>
+
   <section class="controls" aria-label="Filters and sorting">
-    <div class="row">
+    <div class="row filters">
       <span class="lbl">Tier</span>
       <button class="chip gold" data-f="tier" data-v="Gold" aria-pressed="true">Gold</button>
       <button class="chip silver" data-f="tier" data-v="Silver" aria-pressed="true">Silver</button>
@@ -229,8 +266,9 @@ td img{width:150px;height:100px;object-fit:cover;border-radius:6px;cursor:zoom-i
       <button class="chip" id="comfort" aria-pressed="true">Comfort Pass +€390 included</button>
     </div>
     <div class="row">
-      <label class="sl">Max price pp <input type="range" id="maxpp" min="2000" max="5600" step="50" value="5600"><b class="num" id="maxppv">€5,600</b></label>
-      <label class="sl">Max walk to night entrance <input type="range" id="maxwalk" min="3" max="15" step="1" value="15"><b class="num" id="maxwalkv">15 min</b></label>
+      <button class="chip" id="ftoggle" aria-pressed="false">Filters</button>
+      <span class="sl-wrap"><label class="sl">Max price pp <input type="range" id="maxpp" min="2000" max="5600" step="50" value="5600"><b class="num" id="maxppv">€5,600</b></label>
+      <label class="sl">Max walk to night entrance <input type="range" id="maxwalk" min="3" max="15" step="1" value="15"><b class="num" id="maxwalkv">15 min</b></label></span>
       <label class="sl">Sort <select id="sort">
         <option value="score">Best match (weighted)</option>
         <option value="group">Group rating</option>
@@ -240,10 +278,10 @@ td img{width:150px;height:100px;object-fit:cover;border-radius:6px;cursor:zoom-i
         <option value="slopes">Closest to a gondola</option>
         <option value="stars">Most stars</option>
       </select></label>
-      <button class="chip" id="wtoggle" aria-pressed="false">Tune weights</button>
+      <span class="sl-wrap"><button class="chip" id="wtoggle" aria-pressed="false">Tune weights</button></span>
       <span class="summary" id="summary"></span>
     </div>
-    <div class="weights" id="weights">
+    <div class="weights filters" id="weights">
       <span class="lbl">What matters</span>
       <label class="sl">Cheap <input type="range" data-w="price" min="0" max="5" value="3"></label>
       <label class="sl">Near night entrance <input type="range" data-w="fest" min="0" max="5" value="3"></label>
@@ -264,6 +302,7 @@ td img{width:150px;height:100px;object-fit:cover;border-radius:6px;cursor:zoom-i
   <section class="compare" id="compare" aria-label="Compare shortlist">
     <h2 style="font-size:20px;margin-bottom:8px">Side by side</h2>
     <div class="tw"><table id="ctable"></table></div>
+    <div class="cmpcards" id="ccards"></div>
   </section>
 
   <main class="list" id="list"></main>
@@ -443,7 +482,7 @@ const NIGHT = [45.0902, 6.0740];      // Rond-Point de l'Europe: the roundabout 
 const FEST = [45.090444, 6.07175];    // simulator's "Tomorrowland Winter Festival Area" point
 const BERG = [45.09016, 6.07741];     // Marmottes gondola base at Les Bergers (2 mountain stages)
 const SIG = [45.0973, 6.0690];        // Signal lift base by Rond-Point des Pistes
-let map, markerLayer;
+let map, markerLayer; const MARKERS = {};
 function initMap() {
   map = L.map('lmap', { scrollWheelZoom: false }).setView(NIGHT, 15);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
@@ -452,7 +491,7 @@ function initMap() {
   L.marker(FEST, { icon: ico('fest', '✦', 24), zIndexOffset: 900 }).addTo(map).bindTooltip("Simulator's festival-area point");
   L.marker(BERG, { icon: ico('lift', '⛰', 30), zIndexOffset: 950 }).addTo(map).bindTooltip('Les Bergers gondola (Marmottes) · to 2 mountain stages');
   L.marker(SIG, { icon: ico('lift', '⛰', 30), zIndexOffset: 950 }).addTo(map).bindTooltip('Signal lift · Rond-Point des Pistes');
-  markerLayer = L.layerGroup().addTo(map);
+  markerLayer = (L.markerClusterGroup ? L.markerClusterGroup({ disableClusteringAtZoom: 17, spiderfyOnMaxZoom: true, showCoverageOnHover: false, maxClusterRadius: 34 }) : L.layerGroup()).addTo(map);
 }
 function renderMap(rows) {
   if (!map) return;
@@ -464,10 +503,16 @@ function renderMap(rows) {
     const lat = d.lat + (k > 1 ? Math.floor((k - 1) / 3) * 0.00012 : 0), lng = d.lng + (k > 1 ? ((k - 1) % 3 - 1) * 0.00018 : 0);   // stacked pins fan out
     const icon = L.divIcon({ className: '', html: `<div class="mk ${d.tier}${pk.has(d.id) ? ' picked' : ''}"><span>${i + 1}</span></div>`, iconSize: [28, 28], iconAnchor: [14, 32] });
     const m = L.marker([lat, lng], { icon }).bindTooltip(`${i + 1}. ${esc(d.name)} · ${eur(d.pp)} pp`);
-    m.on('click', () => jump(d.id));
+    m.on('click', () => jump(d.id)); MARKERS[d.id] = m;
     markerLayer.addLayer(m); pts.push([lat, lng]);
   });
   if (pts.length && !map._fitted) { map.fitBounds(L.latLngBounds(pts.concat([NIGHT])).pad(0.08)); map._fitted = true; }
+}
+function showOnMap(id) {
+  const m = MARKERS[id]; if (!m) return toast('Not on the map (no coordinates)');
+  document.getElementById('lmap').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const done = () => { map.setView(m.getLatLng(), Math.max(map.getZoom(), 17)); m.openTooltip(); const el = m.getElement()?.querySelector('.mk'); if (el) { el.classList.add('hi'); setTimeout(() => el.classList.remove('hi'), 3500); } };
+  if (markerLayer.zoomToShowLayer) markerLayer.zoomToShowLayer(m, done); else done();
 }
 function jump(id) {
   state.open.add(id); render();
@@ -515,10 +560,11 @@ function card(d, i) {
   const groups = d.facs.map(g => `<h4>${groupLabel[g.k] || g.k}</h4><ul>${g.v.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join('');
   const thumb = d.imgs[0] ? `<div class="thumbwrap"><img class="thumb" src="${d.imgs[0]}" alt="" loading="lazy" referrerpolicy="no-referrer" data-gal="${d.id}" data-i="0"><small>${d.imgs.length} photos</small></div>` : `<div class="thumb"></div>`;
 
+  const pstrip = d.imgs.length ? `<div class="pstrip">${d.imgs.map((f, k) => `<img src="${f}" alt="" loading="lazy" referrerpolicy="no-referrer" data-gal="${d.id}" data-i="${k}">`).join('')}</div>` : '';
   return `<article class="card${pk.has(d.id) ? ' picked' : ''}${isHidden(d.id) ? ' hidden' : ''}" data-id="${d.id}" id="c${d.id}">
-    ${thumb}
+    ${thumb}${pstrip}
     <div class="rank num">${i + 1}</div>
-    <div>
+    <div class="nm">
       <div class="name">${esc(d.name)}</div>
       <div class="meta"><span class="tier ${d.tier}">${d.tier}</span>${d.pair ? `<span class="tier" style="background:var(--surface2);color:var(--accent)">2 double rooms · 4 pkgs ÷ 3</span>` : d.alt ? `<span class="tier" style="background:var(--surface2);color:var(--accent)">2 plans: suite for 3 or 2 doubles</span>` : ''}<span class="stars">${starsTxt(d.stars)}</span><span>${d.type}</span><span>·</span><span>${esc(d.meal)}</span></div>
     </div>
@@ -528,6 +574,7 @@ function card(d, i) {
     <div class="acts">
       <button class="star" data-pick="${d.id}" aria-pressed="${pk.has(d.id)}" title="Add to my shortlist">★</button>
       <button class="more" data-more="${d.id}">${open ? 'Less' : 'Details'}</button>
+      <button class="more" data-map="${d.id}" title="Show on the map">📍</button>
       <button class="hide${isHidden(d.id) ? ' restore' : ''}" data-hide="${d.id}" title="${isHidden(d.id) ? 'Put it back in the list for everyone' : 'Remove from the list for everyone (can be restored)'}">${isHidden(d.id) ? 'Restore' : '✕ Hide'}</button>
     </div>
     <div class="fac" style="grid-column:3/6">${facs}</div>
@@ -548,14 +595,31 @@ function render() {
   document.getElementById('summary').textContent = rows.length ? `${rows.length} of ${DATA.length}${state.showHidden ? ' hidden' : ''} · ${eur(Math.min(...pp))}–${eur(Math.max(...pp))} pp` : (state.showHidden ? 'Nothing hidden' : `0 of ${DATA.length}`);
   const cb = document.getElementById('comfort'); cb.setAttribute('aria-pressed', state.comfort); cb.textContent = state.comfort ? 'Comfort Pass +€390 included' : 'Comfort Pass excluded';
   const nh = DATA.filter(d => isHidden(d.id)).length; const hb = document.getElementById('showhidden'); hb.textContent = `Hidden (${nh})`; hb.setAttribute('aria-pressed', state.showHidden);
-  renderMap(rows); renderTray(); renderPeople();
+  const nf = (state.tier.size < 2) + (state.type.size < 3) + state.fac.size + state.meal + state.rated + (state.maxpp < 5600) + (state.maxwalk < 15);
+  document.getElementById('ftoggle').textContent = nf ? `Filters (${nf})` : 'Filters';
+  renderMap(rows); renderTray(); renderPeople(); renderVerdict();
+}
+function renderVerdict() {
+  const el = document.getElementById('verdict');
+  const live = DATA.filter(d => !isHidden(d.id));
+  const rated = live.map(d => ({ d, r: ratingsFor(d.id), a: groupAvg(d.id) })).filter(x => x.r.length);
+  const names = Object.keys(people).filter(n => countOf(people[n], 'r') || countOf(people[n], 'c') || countOf(people[n], 'p'));
+  if (!rated.length) { el.innerHTML = `<h2>Group verdict</h2><div class="vmeta">No ratings yet. Each of you rate a few options and the top 5 appears here.</div>`; return; }
+  rated.sort((x, y) => y.a - x.a || y.r.length - x.r.length || price(x.d) - price(y.d));
+  const top = rated.slice(0, 5).map((x, i) => `<div class="vrow" data-jump="${x.d.id}"><span class="vrank num">${i + 1}</span><span class="vname">${esc(x.d.name)}</span><span class="vavg num">${x.a.toFixed(1)}★</span>${x.r.map(r => `<span class="who"><i style="background:${colorOf(r.n)}"></i>${esc(r.n)} ${r.s}</span>`).join('')}<span class="num" style="margin-left:auto;color:var(--muted)">${eur(price(x.d))} pp</span></div>`).join('');
+  const waiting = NAMES.filter(n => !people[n] || !countOf(people[n], 'r')).filter(n => n !== 'Shahtot' || (people[n] && countOf(people[n], 'r')));
+  const partial = names.map(n => ({ n, k: live.filter(d => people[n].r[d.id] && people[n].r[d.id].s > 0).length })).filter(x => x.k && x.k < live.length);
+  const splits = rated.filter(x => x.r.length >= 2 && Math.max(...x.r.map(r => r.s)) - Math.min(...x.r.map(r => r.s)) >= 3).slice(0, 4);
+  el.innerHTML = `<h2>Group verdict · top ${Math.min(5, rated.length)} of ${rated.length} rated</h2>${top}
+    <div class="vmeta">${waiting.length ? `Not rated anything yet: <b>${waiting.map(esc).join(', ')}</b>. ` : ''}${partial.map(x => `${esc(x.n)} rated ${x.k}/${live.length}`).join(' · ')}${splits.length ? `<br><span class="warn">Disagreements:</span> ${splits.map(x => `${esc(x.d.name)} (${x.r.map(r => `${esc(r.n)} ${r.s}★`).join(', ')})`).join(' · ')}` : ''}</div>`;
+  el.querySelectorAll('[data-jump]').forEach(b => b.onclick = () => jump(+b.dataset.jump));
 }
 function renderTray() {
   const sel = DATA.filter(d => picks().has(d.id));
   const el = document.getElementById('traynames');
   el.innerHTML = sel.length ? sel.map(d => `<span>${esc(d.name)} <span class="num" style="color:var(--muted);font-weight:400">${eur(d.pp)}</span></span>`).join('')
     : '<span style="background:none;color:var(--muted);font-weight:400">Tap ★ on any option to add it here</span>';
-  document.getElementById('cmp').disabled = sel.length < 2;
+  const cb2 = document.getElementById('cmp'); cb2.disabled = sel.length < 2; cb2.textContent = sel.length >= 2 ? `Compare (${sel.length})` : 'Compare';
   renderCompare(sel);
 }
 function renderCompare(sel) {
@@ -585,6 +649,9 @@ function renderCompare(sel) {
     html += `<tr><th>${label}</th>${sel.map(d => `<td class="num${key && d[key] === best ? ' best' : ''}">${fn(d)}</td>`).join('')}</tr>`;
   }
   document.getElementById('ctable').innerHTML = html;
+  // phone: one swipeable card per option
+  const bestOf = {}; for (const [label, fn, key, dir] of rowsDef) if (key) { const vals = sel.map(d => d[key]).filter(v => v != null); bestOf[label] = dir === 'min' ? Math.min(...vals) : Math.max(...vals); }
+  document.getElementById('ccards').innerHTML = sel.map(d => `<div class="cmpcard">${d.imgs[0] ? `<img src="${d.imgs[0]}" alt="" referrerpolicy="no-referrer" data-gal="${d.id}" data-i="0">` : ''}<div class="name">${esc(d.name)}</div>${rowsDef.filter(r => r[0] !== 'Photo').map(([label, fn, key]) => `<div class="cr${key && d[key] === bestOf[label] ? ' best' : ''}"><span>${label}</span><span class="num">${fn(d)}</span></div>`).join('')}</div>`).join('');
 }
 
 // ----- lightbox -----
@@ -617,6 +684,7 @@ document.getElementById('maxpp').oninput = e => { state.maxpp = +e.target.value;
 document.getElementById('maxwalk').oninput = e => { state.maxwalk = +e.target.value; document.getElementById('maxwalkv').textContent = state.maxwalk + ' min'; render(); };
 document.getElementById('sort').onchange = e => { state.sort = e.target.value; render(); };
 document.getElementById('showhidden').onclick = () => { state.showHidden = !state.showHidden; render(); };
+document.getElementById('ftoggle').onclick = e => { const c = document.querySelector('.controls'); const on = !c.classList.contains('fopen'); c.classList.toggle('fopen', on); e.target.setAttribute('aria-pressed', on); };
 document.getElementById('comfort').onclick = () => { state.comfort = !state.comfort; render(); };
 document.getElementById('wtoggle').onclick = e => { const on = e.target.getAttribute('aria-pressed') !== 'true'; e.target.setAttribute('aria-pressed', on); document.getElementById('weights').classList.toggle('on', on); };
 document.getElementById('weights').addEventListener('input', e => { if (e.target.dataset.w) { state.w[e.target.dataset.w] = +e.target.value; state.sort = 'score'; document.getElementById('sort').value = 'score'; render(); } });
@@ -629,6 +697,7 @@ document.getElementById('list').addEventListener('click', e => {
   if (nc) { state.noteOpen.delete(+nc.dataset.notecancel); render(); }
   if (p) { if (!ensureMe()) return; const id = +p.dataset.pick, me = mine(); me.p[id] = { on: !myPick(me, id), t: Date.now() }; saveLocal(); render(); }
   if (m) { const id = +m.dataset.more; state.open.has(id) ? state.open.delete(id) : state.open.add(id); render(); }
+  const mp = e.target.closest('[data-map]'); if (mp) showOnMap(+mp.dataset.map);
   if (r) { if (!ensureMe()) return; const id = +r.parentElement.dataset.rate, n = +r.dataset.n, me = mine(); me.r[id] = { s: myRating(me, id) === n ? 0 : n, t: Date.now() }; saveLocal(); render(); }
 });
 document.getElementById('cmp').onclick = () => { document.getElementById('compare').classList.add('on'); document.getElementById('compare').scrollIntoView({ behavior:'smooth', block:'start' }); };
