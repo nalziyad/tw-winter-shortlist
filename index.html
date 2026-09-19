@@ -70,6 +70,9 @@ select,input[type=text]{font:inherit;padding:5px 8px;border-radius:8px;border:1p
 .mk.fest2{background:var(--fest2);width:36px;height:36px}.mk.fest2 span{font-size:17px}
 .mk.picked{outline:3px solid var(--accent);outline-offset:1px}
 .mapnote{font-size:13px;color:var(--muted);margin-top:6px}
+.card.hidden{opacity:.55}
+.hide{border:1px solid var(--line);background:var(--surface);border-radius:8px;height:36px;padding:0 10px;font-size:13px;font-weight:600;color:var(--muted)}
+.hide.restore{color:var(--good);border-color:var(--good)}
 .list{display:flex;flex-direction:column;gap:8px;padding-block:14px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px 10px 10px;display:grid;grid-template-columns:120px 30px 1.6fr 1fr 1fr 1.2fr auto;gap:8px 14px;align-items:center;scroll-margin-top:190px}
 .card.picked{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent)}
@@ -195,6 +198,7 @@ td img{width:150px;height:100px;object-fit:cover;border-radius:6px;cursor:zoom-i
       <button class="chip" data-f="fac" data-v="RESTAURANT" aria-pressed="false">Restaurant</button>
       <button class="chip" data-f="meal" data-v="1" aria-pressed="false">Breakfast included</button>
       <button class="chip" data-f="rated" data-v="1" aria-pressed="false">Rated by someone</button>
+      <button class="chip" id="showhidden" aria-pressed="false">Hidden (0)</button>
     </div>
     <div class="row">
       <label class="sl">Max price pp <input type="range" id="maxpp" min="1700" max="4400" step="50" value="4400"><b class="num" id="maxppv">€4,400</b></label>
@@ -277,6 +281,7 @@ const ls = { get(k, fb) { try { const v = localStorage.getItem(k); return v == n
 // ----- shared state: people = { name: { r:{id:1-5}, p:[ids], t:ms } }, synced to the group's JSON document -----
 let ME = ls.get('twme', '');
 let people = ls.get('twpeople', {});
+let hidden = ls.get('twhidden', {});   // id -> {on:true|false, by:name, t:ms}; newest t wins, shared with the group
 let syncState = 'idle';
 function mine() { if (!ME) return { r: {}, p: [], t: 0 }; people[ME] = people[ME] || { r: {}, p: [], t: 0 }; return people[ME]; }
 function cleanPeople(obj) {
@@ -291,6 +296,8 @@ function cleanPeople(obj) {
   return out;
 }
 function mergeInto(target, incoming) { let changed = false; for (const [n, v] of Object.entries(incoming)) { if (!target[n] || v.t > (target[n].t || 0)) { target[n] = v; changed = true; } } return changed; }
+function cleanHidden(obj) { const out = {}; for (const [id, v] of Object.entries(obj || {})) if (DATA.some(d => d.id === +id) && v && typeof v === 'object') out[id] = { on: !!v.on, by: String(v.by || '').slice(0, 20), t: +v.t || 0 }; return out; }
+const isHidden = id => !!(hidden[id] && hidden[id].on);
 async function pull() {
   if (!STORE) return;
   try {
@@ -298,7 +305,8 @@ async function pull() {
     if (r.status === 404 || r.status === 400) { setSync('ok'); return; }
     if (!r.ok) throw new Error(r.status);
     const doc = await r.json();
-    if (mergeInto(people, cleanPeople(doc.people))) { ls.set('twpeople', people); render(); }
+    const c1 = mergeInto(people, cleanPeople(doc.people)), c2 = mergeInto(hidden, cleanHidden(doc.hidden));
+    if (c1 || c2) { ls.set('twpeople', people); ls.set('twhidden', hidden); render(); }
     setSync('ok');
   } catch (e) { setSync('err'); }
 }
@@ -308,16 +316,14 @@ async function doPush() {
   if (!STORE) return;
   try {
     setSync('saving');
-    let remote = {};
-    try { const r = await fetch(STORE.get, { cache: 'no-store' }); if (r.ok) remote = cleanPeople((await r.json()).people); } catch (e) {}
-    mergeInto(people, remote);                       // never drop a friend's newer edit
-    const w = await fetch(STORE.put, { method: STORE.method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ people, v: 2, updated: new Date().toISOString() }) });
+    try { const r = await fetch(STORE.get, { cache: 'no-store' }); if (r.ok) { const doc = await r.json(); mergeInto(people, cleanPeople(doc.people)); mergeInto(hidden, cleanHidden(doc.hidden)); } } catch (e) {}   // never drop a friend's newer edit
+    const w = await fetch(STORE.put, { method: STORE.method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ people, hidden, v: 3, updated: new Date().toISOString() }) });
     if (!w.ok) throw new Error(w.status);
-    ls.set('twpeople', people); render(); setSync('ok');
+    ls.set('twpeople', people); ls.set('twhidden', hidden); render(); setSync('ok');
   } catch (e) { setSync('err'); }
 }
 function setSync(s) { syncState = s; const el = document.getElementById('sync'); if (el) { el.textContent = s === 'ok' ? 'Synced with the group' : s === 'saving' ? 'Saving…' : s === 'err' ? 'Offline: showing your last copy, will retry' : ''; el.className = 'sync' + (s === 'err' ? ' err' : ''); } }
-function saveLocal() { if (ME) mine().t = Date.now(); ls.set('twpeople', people); ls.set('twme', ME); push(); }
+function saveLocal() { if (ME) mine().t = Date.now(); ls.set('twpeople', people); ls.set('twhidden', hidden); ls.set('twme', ME); push(); }
 function ensureMe() {
   if (ME) return true;
   const n = (prompt('Your first name (so your friends can tell whose ratings are whose):') || '').trim().slice(0, 20);
@@ -340,7 +346,7 @@ function renderPeople() {
 }
 
 const state = { tier:new Set(['Gold','Silver']), type:new Set(['Hotel','Apartment','Shared Chalet']), fac:new Set(), meal:false, rated:false,
-  maxpp:4400, maxwalk:15, sort:'score', w:{price:3,fest:3,slopes:2,stars:2}, open:new Set() };
+  maxpp:4400, maxwalk:15, sort:'score', w:{price:3,fest:3,slopes:2,stars:2}, open:new Set(), showHidden:false };
 
 const range = k => { const v = DATA.map(d => d[k]).filter(x => x != null); return [Math.min(...v), Math.max(...v)]; };
 const R = { pp:range('pp'), walk:range('walk'), dSlopes:range('dSlopes'), stars:range('stars') };
@@ -351,7 +357,7 @@ function score(d) {
         + w.slopes * norm(d.dSlopes, R.dSlopes, true) + w.stars * norm(d.stars, R.stars, false)) / sum;
 }
 function visible() {
-  return DATA.filter(d => state.tier.has(d.tier) && state.type.has(d.type) && d.pp <= state.maxpp && d.walk <= state.maxwalk
+  return DATA.filter(d => (state.showHidden ? isHidden(d.id) : !isHidden(d.id)) && state.tier.has(d.tier) && state.type.has(d.type) && d.pp <= state.maxpp && d.walk <= state.maxwalk
     && [...state.fac].every(f => d.fac.includes(f)) && (!state.meal || d.meal !== 'Self catering') && (!state.rated || ratingsFor(d.id).length));
 }
 const sorters = { score:(a,b)=>score(b)-score(a), group:(a,b)=>(groupAvg(b.id)??-1)-(groupAvg(a.id)??-1)||ratingsFor(b.id).length-ratingsFor(a.id).length||a.pp-b.pp,
@@ -397,7 +403,8 @@ function rateRow(d) {
   const my = mine().r[d.id] || 0;
   const others = ratingsFor(d.id).filter(x => x.n !== ME).map(x => `<span class="who"><i style="background:${colorOf(x.n)}"></i>${esc(x.n)} ${x.s}★</span>`).join('');
   const avg = groupAvg(d.id);
-  return `<div class="rate"><span>${ME ? esc(ME) : 'You'}:</span><span class="r5" data-rate="${d.id}">${[1,2,3,4,5].map(n => `<button class="${n <= my ? 'on' : ''}" data-n="${n}" title="${n} star${n > 1 ? 's' : ''}">★</button>`).join('')}</span>${others}${avg ? `<span class="avg">Group ${avg.toFixed(1)}★ (${ratingsFor(d.id).length})</span>` : ''}</div>`;
+  const hid = isHidden(d.id) ? `<span class="who" style="color:var(--fest)">Hidden by ${esc(hidden[d.id].by || 'someone')}</span>` : '';
+  return `<div class="rate">${hid}<span>${ME ? esc(ME) : 'You'}:</span><span class="r5" data-rate="${d.id}">${[1,2,3,4,5].map(n => `<button class="${n <= my ? 'on' : ''}" data-n="${n}" title="${n} star${n > 1 ? 's' : ''}">★</button>`).join('')}</span>${others}${avg ? `<span class="avg">Group ${avg.toFixed(1)}★ (${ratingsFor(d.id).length})</span>` : ''}</div>`;
 }
 
 function card(d, i) {
@@ -408,7 +415,7 @@ function card(d, i) {
   const thumb = d.imgs[0] ? `<div class="thumbwrap"><img class="thumb" src="${d.imgs[0]}" alt="" loading="lazy" referrerpolicy="no-referrer" data-gal="${d.id}" data-i="0"><small>${d.imgs.length} photos</small></div>` : `<div class="thumb"></div>`;
   const priceTable = `<table><tr><th>Room for ${GROUP}</th><th>pp</th><th>Total</th><th>Stay share pp</th></tr>${d.roomPrices.map(r => `<tr><td>${esc(r.n)}</td><td class="num">${eur(r.pp)}</td><td class="num">${eur(r.pp * GROUP)}</td><td class="num">${eur(r.pp - FIXED)}</td></tr>`).join('')}</table>
     <p style="color:var(--muted);font-size:13px;margin-top:6px">Each pp price = accommodation share + €316 festival ticket + €389 ski pass. Simulator's own "walk to festival": ${d.dFest} km.</p>`;
-  return `<article class="card${pk.has(d.id) ? ' picked' : ''}" data-id="${d.id}" id="c${d.id}">
+  return `<article class="card${pk.has(d.id) ? ' picked' : ''}${isHidden(d.id) ? ' hidden' : ''}" data-id="${d.id}" id="c${d.id}">
     ${thumb}
     <div class="rank num">${i + 1}</div>
     <div>
@@ -421,6 +428,7 @@ function card(d, i) {
     <div class="acts">
       <button class="star" data-pick="${d.id}" aria-pressed="${pk.has(d.id)}" title="Add to my shortlist">★</button>
       <button class="more" data-more="${d.id}">${open ? 'Less' : 'Details'}</button>
+      <button class="hide${isHidden(d.id) ? ' restore' : ''}" data-hide="${d.id}" title="${isHidden(d.id) ? 'Put it back in the list for everyone' : 'Remove from the list for everyone (can be restored)'}">${isHidden(d.id) ? 'Restore' : '✕ Hide'}</button>
     </div>
     <div class="fac" style="grid-column:3/6">${facs}</div>
     ${rateRow(d)}
@@ -437,7 +445,8 @@ function render() {
   const rows = visible().sort(sorters[state.sort]);
   document.getElementById('list').innerHTML = rows.length ? rows.map(card).join('') : '<div class="empty">Nothing matches. Loosen a filter.</div>';
   const pp = rows.map(r => r.pp);
-  document.getElementById('summary').textContent = rows.length ? `${rows.length} of ${DATA.length} · ${eur(Math.min(...pp))}–${eur(Math.max(...pp))} pp` : '0 of 29';
+  document.getElementById('summary').textContent = rows.length ? `${rows.length} of ${DATA.length}${state.showHidden ? ' hidden' : ''} · ${eur(Math.min(...pp))}–${eur(Math.max(...pp))} pp` : (state.showHidden ? 'Nothing hidden' : '0 of 29');
+  const nh = DATA.filter(d => isHidden(d.id)).length; const hb = document.getElementById('showhidden'); hb.textContent = `Hidden (${nh})`; hb.setAttribute('aria-pressed', state.showHidden);
   renderMap(rows); renderTray(); renderPeople();
 }
 function renderTray() {
@@ -502,10 +511,12 @@ document.querySelector('.controls').addEventListener('click', e => {
 document.getElementById('maxpp').oninput = e => { state.maxpp = +e.target.value; document.getElementById('maxppv').textContent = eur(state.maxpp); render(); };
 document.getElementById('maxwalk').oninput = e => { state.maxwalk = +e.target.value; document.getElementById('maxwalkv').textContent = state.maxwalk + ' min'; render(); };
 document.getElementById('sort').onchange = e => { state.sort = e.target.value; render(); };
+document.getElementById('showhidden').onclick = () => { state.showHidden = !state.showHidden; render(); };
 document.getElementById('wtoggle').onclick = e => { const on = e.target.getAttribute('aria-pressed') !== 'true'; e.target.setAttribute('aria-pressed', on); document.getElementById('weights').classList.toggle('on', on); };
 document.getElementById('weights').addEventListener('input', e => { if (e.target.dataset.w) { state.w[e.target.dataset.w] = +e.target.value; state.sort = 'score'; document.getElementById('sort').value = 'score'; render(); } });
 document.getElementById('list').addEventListener('click', e => {
-  const p = e.target.closest('[data-pick]'), m = e.target.closest('[data-more]'), r = e.target.closest('[data-rate] button');
+  const p = e.target.closest('[data-pick]'), m = e.target.closest('[data-more]'), r = e.target.closest('[data-rate] button'), x = e.target.closest('[data-hide]');
+  if (x) { if (!ensureMe()) return; const id = +x.dataset.hide; hidden[id] = { on: !isHidden(id), by: ME, t: Date.now() }; saveLocal(); render(); }
   if (p) { if (!ensureMe()) return; const id = +p.dataset.pick, me = mine(); me.p = me.p.includes(id) ? me.p.filter(x => x !== id) : [...me.p, id]; saveLocal(); render(); }
   if (m) { const id = +m.dataset.more; state.open.has(id) ? state.open.delete(id) : state.open.add(id); render(); }
   if (r) { if (!ensureMe()) return; const id = +r.parentElement.dataset.rate, n = +r.dataset.n, me = mine(); if (me.r[id] === n) delete me.r[id]; else me.r[id] = n; saveLocal(); render(); }
