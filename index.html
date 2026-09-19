@@ -353,7 +353,7 @@ function notesFor(id) { return Object.entries(people).filter(([n, v]) => v.c && 
 function groupAvg(id) { const r = ratingsFor(id); return r.length ? r.reduce((a, b) => a + b.s, 0) / r.length : null; }
 
 function renderPeople() {
-  const names = Object.keys(people);
+  const names = Object.keys(people).filter(n => n === ME || Object.keys(people[n].r || {}).length || Object.keys(people[n].c || {}).length || (people[n].p || []).length);
   const el = document.getElementById('people');
   const chips = names.map(n => `<span class="who${n === ME ? ' me' : ''}"><i style="background:${colorOf(n)}"></i>${esc(n)}${n === ME ? ' (you)' : ''} <small>· ${Object.keys(people[n].r || {}).length} rated · ${Object.keys(people[n].c || {}).length} comments · ${(people[n].p || []).length} ★</small></span>`).join('');
   el.innerHTML = `<span class="eyebrow">Rating together</span>${chips || '<small>Nobody has rated yet.</small>'}<small>${ME ? `You are <b>${esc(ME)}</b>.` : ''} Rate with the stars on each card; everyone sees it within seconds.</small>${ME ? '' : '<button class="btn" id="setme">Set my name</button>'}<span class="sync" id="sync"></span>`;
