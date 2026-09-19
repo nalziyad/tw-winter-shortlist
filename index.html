@@ -368,13 +368,12 @@ async function doPush(attempt = 0) {
 }
 function setSync(s) { syncState = s; const el = document.getElementById('sync'); if (el) { el.textContent = s === 'ok' ? 'Synced with the group' : s === 'saving' ? 'Saving…' : s === 'retry' ? 'Saving… (store busy, retrying)' : s === 'err' ? 'Could not reach the group store. Your changes are kept on this device and will be sent on the next change or reload.' : ''; el.className = 'sync' + (s === 'err' ? ' err' : ''); } }
 function saveLocal() { if (ME) mine().t = Date.now(); ls.set('twpeople', people); ls.set('twhidden', hidden); ls.set('twme', ME); push(); }
+const NAMES = ['Najd', 'Ghalo', 'Ahad', 'Shahtot'];
 function ensureMe() {
   if (ME) return true;
-  let n = (prompt('Your first name (use the same name on every device):') || '').trim().slice(0, 20);
-  if (!n) return false;
-  const same = Object.keys(people).find(k => k.toLowerCase() === n.toLowerCase()); if (same) n = same;
-  ME = n; mine(); saveLocal(); return true;
+  toast('Pick your name at the top first'); document.getElementById('people').scrollIntoView({ behavior: 'smooth', block: 'center' }); return false;
 }
+function setMe(n) { ME = n; mine(); saveLocal(); render(); }
 const COLORS = ['#1B6FD1', '#D63A6A', '#1F8A5B', '#B7791F', '#7A3BD6', '#0E9AA7'];
 const colorOf = name => COLORS[[...Object.keys(people)].sort().indexOf(name) % COLORS.length] || COLORS[0];
 const picks = () => new Set(Object.entries(mine().p).filter(([id, x]) => x.on).map(([id]) => +id));
@@ -387,8 +386,9 @@ function renderPeople() {
   const names = Object.keys(people).filter(n => n === ME || countOf(people[n], 'r') || countOf(people[n], 'c') || countOf(people[n], 'p'));
   const el = document.getElementById('people');
   const chips = names.map(n => `<span class="who${n === ME ? ' me' : ''}"><i style="background:${colorOf(n)}"></i>${esc(n)}${n === ME ? ' (you)' : ''} <small>· ${countOf(people[n], 'r')} rated · ${countOf(people[n], 'c')} comments · ${countOf(people[n], 'p')} ★</small></span>`).join('');
-  el.innerHTML = `<span class="eyebrow">Rating together</span>${chips || '<small>Nobody has rated yet.</small>'}<small>${ME ? `You are <b>${esc(ME)}</b>.` : ''} Rate with the stars on each card; everyone sees it within seconds.</small>${ME ? '' : '<button class="btn" id="setme">Set my name</button>'}<span class="sync" id="sync"></span>`;
-  const b = document.getElementById('setme'); if (b) b.onclick = () => { ensureMe(); render(); };
+  const picker = ME ? `<small>You are <b>${esc(ME)}</b> · <button class="notebtn" data-setme="">not you?</button></small>` : `<span class="lbl">Who are you?</span>${NAMES.map(n => `<button class="btn" data-setme="${n}">${n}</button>`).join('')}`;
+  el.innerHTML = `<span class="eyebrow">Rating together</span>${picker}${chips || ''}<small>Rate with the stars on each card; everyone sees it within seconds, on any phone or laptop.</small><span class="sync" id="sync"></span>`;
+  el.querySelectorAll('[data-setme]').forEach(b => b.onclick = () => { const n = b.dataset.setme; if (n) setMe(n); else { ME = ''; ls.set('twme', ''); render(); } });
   setSync(syncState);
 }
 
