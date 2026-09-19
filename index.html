@@ -278,6 +278,7 @@ const DATA = JSON.parse(document.getElementById('data').textContent).map(d => {
   if (/Woodpecker/.test(d.name)) d.meal = 'Fully catered: breakfast, afternoon tea, 6 dinners with wine';
   if (!d.meal || /^Self/i.test(d.meal)) d.meal = 'Self catering';
   if (/^Bed and/i.test(d.meal)) d.meal = 'Bed & breakfast';
+  if (/all inclusive|all-in/i.test(d.meal) || d.meal.length > 70) d.meal = /all inclusive|all-in|Club Med/i.test(d.meal + d.name) ? 'All inclusive (meals & drinks)' : d.meal.slice(0, 60) + '…';
   d.walk = d.nightWalk == null ? 15 : d.nightWalk;
   d.liftWalk = d.bergWalk == null ? 15 : Math.min(d.bergWalk, d.sigWalk);   // nearest gondola to the mountain stages
   d.pair = d.plan === 'pair';                 // 2 double rooms = 4 packages, cost shared by 3
