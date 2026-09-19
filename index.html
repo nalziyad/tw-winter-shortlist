@@ -501,8 +501,6 @@ function planParts(d) {
       </div>`;
     }).join('') + (RI.site ? `<p class="rnote">Room photos from the hotel's website: <a href="${RI.site}" target="_blank" rel="noopener">${esc(RI.site.replace(/^https?:\/\/(www\.)?/, '').split('/')[0])}</a>. Photos © the hotel.</p>` : '')
     : roomsShown.map(r => `<div class="rm"><b>${esc(r.n)}</b>${(() => { const rp = d.roomPrices.find(x => x.n.toLowerCase() === r.n.toLowerCase()); return rp ? ` <span class="num" style="color:var(--muted)">· ${eur(roomPrice(rp))} pp${d.pair ? ' (÷3)' : ''}</span>` : ''; })()}<ul>${r.d.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`).join('');
-  const groups = d.facs.map(g => `<h4>${groupLabel[g.k] || g.k}</h4><ul>${g.v.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join('');
-  const thumb = d.imgs[0] ? `<div class="thumbwrap"><img class="thumb" src="${d.imgs[0]}" alt="" loading="lazy" referrerpolicy="no-referrer" data-gal="${d.id}" data-i="0"><small>${d.imgs.length} photos</small></div>` : `<div class="thumb"></div>`;
   const priceTable = d.pair
     ? `<table><tr><th>Double room (×2)</th><th>Simulator pp (2 ppl)</th><th>4 pkgs${state.comfort ? ' + 3 Comfort' : ''}</th><th>÷ 3 pp</th></tr>${d.roomPrices.map(r => `<tr><td>${esc(r.n)}</td><td class="num">${eur(r.pp2)}</td><td class="num">${eur(4 * r.pp2 + (state.comfort ? 3 * COMFORT : 0))}</td><td class="num">${eur(roomPrice(r))}</td></tr>`).join('')}</table>`
     : `<table><tr><th>Room for ${GROUP}</th><th>pp${state.comfort ? ' incl. Comfort' : ''}</th><th>Total</th><th>Stay share pp</th></tr>${d.roomPrices.map(r => `<tr><td>${esc(r.n)}</td><td class="num">${eur(roomPrice(r))}</td><td class="num">${eur(roomPrice(r) * GROUP)}</td><td class="num">${eur(r.pp - FIXED)}</td></tr>`).join('')}</table>`;
@@ -514,6 +512,8 @@ function card(d, i) {
   const open = state.open.has(d.id), pk = picks();
   const facs = d.fac.filter(f => f !== 'TOWELS' && f !== 'BEDLINEN').map(f => `<span>${facLabel[f] || f}</span>`).join('');
   const P = planParts(d), PA = d.alt ? planParts(d.alt) : null;
+  const groups = d.facs.map(g => `<h4>${groupLabel[g.k] || g.k}</h4><ul>${g.v.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join('');
+  const thumb = d.imgs[0] ? `<div class="thumbwrap"><img class="thumb" src="${d.imgs[0]}" alt="" loading="lazy" referrerpolicy="no-referrer" data-gal="${d.id}" data-i="0"><small>${d.imgs.length} photos</small></div>` : `<div class="thumb"></div>`;
 
   return `<article class="card${pk.has(d.id) ? ' picked' : ''}${isHidden(d.id) ? ' hidden' : ''}" data-id="${d.id}" id="c${d.id}">
     ${thumb}
