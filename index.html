@@ -73,6 +73,13 @@ select,input[type=text]{font:inherit;padding:5px 8px;border-radius:8px;border:1p
 .card.hidden{opacity:.55}
 .hide{border:1px solid var(--line);background:var(--surface);border-radius:8px;height:36px;padding:0 10px;font-size:13px;font-weight:600;color:var(--muted)}
 .hide.restore{color:var(--good);border-color:var(--good)}
+.notes{grid-column:3/-1;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.note{display:flex;gap:6px;align-items:baseline}
+.note b{font-weight:600;white-space:nowrap}
+.note i{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none;align-self:center}
+.noteform{display:flex;gap:6px;align-items:flex-start}
+.noteform textarea{flex:1;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);min-height:38px;resize:vertical}
+.notebtn{border:0;background:none;color:var(--accent);font-weight:600;font-size:13px;padding:0}
 .list{display:flex;flex-direction:column;gap:8px;padding-block:14px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 14px 10px 10px;display:grid;grid-template-columns:120px 30px 1.6fr 1fr 1fr 1.2fr auto;gap:8px 14px;align-items:center;scroll-margin-top:190px}
 .card.picked{border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent)}
@@ -283,12 +290,13 @@ let ME = ls.get('twme', '');
 let people = ls.get('twpeople', {});
 let hidden = ls.get('twhidden', {});   // id -> {on:true|false, by:name, t:ms}; newest t wins, shared with the group
 let syncState = 'idle';
-function mine() { if (!ME) return { r: {}, p: [], t: 0 }; people[ME] = people[ME] || { r: {}, p: [], t: 0 }; return people[ME]; }
+function mine() { if (!ME) return { r: {}, p: [], c: {}, t: 0 }; people[ME] = people[ME] || { r: {}, p: [], c: {}, t: 0 }; people[ME].c = people[ME].c || {}; return people[ME]; }
 function cleanPeople(obj) {
   const out = {};
   for (const [name, v] of Object.entries(obj || {})) {
     if (!v || typeof v !== 'object' || !name) continue;
-    const c = { r: {}, p: [], t: +v.t || 0 };
+    const c = { r: {}, p: [], c: {}, t: +v.t || 0 };
+    for (const [id, s] of Object.entries(v.c || {})) if (DATA.some(d => d.id === +id) && typeof s === 'string' && s.trim()) c.c[id] = s.trim().slice(0, 500);
     for (const [id, s] of Object.entries(v.r || {})) if (DATA.some(d => d.id === +id) && s >= 1 && s <= 5) c.r[id] = +s;
     c.p = (Array.isArray(v.p) ? v.p : []).map(Number).filter(id => DATA.some(d => d.id === id));
     out[name.slice(0, 20)] = c;
@@ -334,19 +342,20 @@ const COLORS = ['#1B6FD1', '#D63A6A', '#1F8A5B', '#B7791F', '#7A3BD6', '#0E9AA7'
 const colorOf = name => COLORS[[...Object.keys(people)].sort().indexOf(name) % COLORS.length] || COLORS[0];
 const picks = () => new Set(mine().p);
 function ratingsFor(id) { return Object.entries(people).filter(([n, v]) => v.r && v.r[id]).map(([n, v]) => ({ n, s: v.r[id] })); }
+function notesFor(id) { return Object.entries(people).filter(([n, v]) => v.c && v.c[id]).map(([n, v]) => ({ n, c: v.c[id] })); }
 function groupAvg(id) { const r = ratingsFor(id); return r.length ? r.reduce((a, b) => a + b.s, 0) / r.length : null; }
 
 function renderPeople() {
   const names = Object.keys(people);
   const el = document.getElementById('people');
-  const chips = names.map(n => `<span class="who${n === ME ? ' me' : ''}"><i style="background:${colorOf(n)}"></i>${esc(n)}${n === ME ? ' (you)' : ''} <small>· ${Object.keys(people[n].r || {}).length} rated · ${(people[n].p || []).length} ★</small></span>`).join('');
+  const chips = names.map(n => `<span class="who${n === ME ? ' me' : ''}"><i style="background:${colorOf(n)}"></i>${esc(n)}${n === ME ? ' (you)' : ''} <small>· ${Object.keys(people[n].r || {}).length} rated · ${Object.keys(people[n].c || {}).length} comments · ${(people[n].p || []).length} ★</small></span>`).join('');
   el.innerHTML = `<span class="eyebrow">Rating together</span>${chips || '<small>Nobody has rated yet.</small>'}<small>${ME ? `You are <b>${esc(ME)}</b>.` : ''} Rate with the stars on each card; everyone sees it within seconds.</small>${ME ? '' : '<button class="btn" id="setme">Set my name</button>'}<span class="sync" id="sync"></span>`;
   const b = document.getElementById('setme'); if (b) b.onclick = () => { ensureMe(); render(); };
   setSync(syncState);
 }
 
 const state = { tier:new Set(['Gold','Silver']), type:new Set(['Hotel','Apartment','Shared Chalet']), fac:new Set(), meal:false, rated:false,
-  maxpp:4400, maxwalk:15, sort:'score', w:{price:3,fest:3,slopes:2,stars:2}, open:new Set(), showHidden:false };
+  maxpp:4400, maxwalk:15, sort:'score', w:{price:3,fest:3,slopes:2,stars:2}, open:new Set(), showHidden:false, noteOpen:new Set() };
 
 const range = k => { const v = DATA.map(d => d[k]).filter(x => x != null); return [Math.min(...v), Math.max(...v)]; };
 const R = { pp:range('pp'), walk:range('walk'), dSlopes:range('dSlopes'), stars:range('stars') };
@@ -404,7 +413,10 @@ function rateRow(d) {
   const others = ratingsFor(d.id).filter(x => x.n !== ME).map(x => `<span class="who"><i style="background:${colorOf(x.n)}"></i>${esc(x.n)} ${x.s}★</span>`).join('');
   const avg = groupAvg(d.id);
   const hid = isHidden(d.id) ? `<span class="who" style="color:var(--fest)">Hidden by ${esc(hidden[d.id].by || 'someone')}</span>` : '';
-  return `<div class="rate">${hid}<span>${ME ? esc(ME) : 'You'}:</span><span class="r5" data-rate="${d.id}">${[1,2,3,4,5].map(n => `<button class="${n <= my ? 'on' : ''}" data-n="${n}" title="${n} star${n > 1 ? 's' : ''}">★</button>`).join('')}</span>${others}${avg ? `<span class="avg">Group ${avg.toFixed(1)}★ (${ratingsFor(d.id).length})</span>` : ''}</div>`;
+  const myNote = mine().c[d.id] || '';
+  const notes = notesFor(d.id).filter(x => x.n !== ME || !state.noteOpen.has(d.id)).map(x => `<div class="note"><i style="background:${colorOf(x.n)}"></i><b>${esc(x.n)}:</b><span>${esc(x.c)}</span></div>`).join('');
+  const form = state.noteOpen.has(d.id) ? `<div class="noteform"><textarea id="nt${d.id}" data-notetext="${d.id}" placeholder="Why this grade? e.g. too far at night, great balcony" maxlength="500">${esc(myNote)}</textarea><button class="btn primary" data-notesave="${d.id}">Save</button><button class="btn" data-notecancel="${d.id}">Cancel</button></div>` : '';
+  return `<div class="rate">${hid}<span>${ME ? esc(ME) : 'You'}:</span><span class="r5" data-rate="${d.id}">${[1,2,3,4,5].map(n => `<button class="${n <= my ? 'on' : ''}" data-n="${n}" title="${n} star${n > 1 ? 's' : ''}">★</button>`).join('')}</span><button class="notebtn" data-noteopen="${d.id}">${myNote ? '✎ Edit my comment' : '＋ Comment'}</button>${others}${avg ? `<span class="avg">Group ${avg.toFixed(1)}★ (${ratingsFor(d.id).length})</span>` : ''}</div>${notes || form ? `<div class="notes">${notes}${form}</div>` : ''}`;
 }
 
 function card(d, i) {
@@ -470,6 +482,7 @@ function renderCompare(sel) {
     ['To night entrance', d => d.nightWalk == null ? 'n/a' : `~${d.nightWalk} min (${d.nightM} m)`, 'walk', 'min'],
     ['To slopes', d => d.slopeWalk === null ? 'n/a' : d.slopeWalk === 0 ? 'Ski-in/out' : d.slopeWalk + ' min', 'dSlopes', 'min'],
     ['Ratings', d => { const r = ratingsFor(d.id); const a = groupAvg(d.id); return r.length ? r.map(x => `${esc(x.n)} ${x.s}★`).join('<br>') + `<br><b>Group ${a.toFixed(1)}★</b>` : '—'; }],
+    ['Comments', d => { const n = notesFor(d.id); return n.length ? n.map(x => `<b>${esc(x.n)}:</b> ${esc(x.c)}`).join('<br>') : '—'; }],
     ['Facilities', d => d.fac.map(f => facLabel[f] || f).join(', ')],
     ['Room for 3', d => d.roomPrices.map(r => esc(r.n)).join('<br>')],
     ['Link', d => `<a href="${d.url}?NumberOfParticipants=3&TransportType=EV&Duration=7" target="_blank" rel="noopener">Simulator ↗</a>`],
@@ -517,12 +530,16 @@ document.getElementById('weights').addEventListener('input', e => { if (e.target
 document.getElementById('list').addEventListener('click', e => {
   const p = e.target.closest('[data-pick]'), m = e.target.closest('[data-more]'), r = e.target.closest('[data-rate] button'), x = e.target.closest('[data-hide]');
   if (x) { if (!ensureMe()) return; const id = +x.dataset.hide; hidden[id] = { on: !isHidden(id), by: ME, t: Date.now() }; saveLocal(); render(); }
+  const no = e.target.closest('[data-noteopen]'), ns = e.target.closest('[data-notesave]'), nc = e.target.closest('[data-notecancel]');
+  if (no) { if (!ensureMe()) return; const id = +no.dataset.noteopen; state.noteOpen.add(id); render(); const t = document.getElementById('nt' + id); if (t) { t.focus(); t.selectionStart = t.value.length; } }
+  if (ns) { const id = +ns.dataset.notesave; const t = document.getElementById('nt' + id); const v = (t ? t.value : '').trim().slice(0, 500); const me = mine(); if (v) me.c[id] = v; else delete me.c[id]; state.noteOpen.delete(id); saveLocal(); render(); }
+  if (nc) { state.noteOpen.delete(+nc.dataset.notecancel); render(); }
   if (p) { if (!ensureMe()) return; const id = +p.dataset.pick, me = mine(); me.p = me.p.includes(id) ? me.p.filter(x => x !== id) : [...me.p, id]; saveLocal(); render(); }
   if (m) { const id = +m.dataset.more; state.open.has(id) ? state.open.delete(id) : state.open.add(id); render(); }
   if (r) { if (!ensureMe()) return; const id = +r.parentElement.dataset.rate, n = +r.dataset.n, me = mine(); if (me.r[id] === n) delete me.r[id]; else me.r[id] = n; saveLocal(); render(); }
 });
 document.getElementById('cmp').onclick = () => { document.getElementById('compare').classList.add('on'); document.getElementById('compare').scrollIntoView({ behavior:'smooth', block:'start' }); };
-document.getElementById('clear').onclick = () => { if (!ME) return; const me = mine(); me.p = []; me.r = {}; saveLocal(); render(); };
+document.getElementById('clear').onclick = () => { if (!ME) return; const me = mine(); me.p = []; me.r = {}; me.c = {}; saveLocal(); render(); };
 document.getElementById('share').onclick = async () => { try { await navigator.clipboard.writeText(location.origin + location.pathname); toast('Link copied. Send it to the group.'); } catch (e) { prompt('Copy this link:', location.href); } };
 function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 2200); }
 
