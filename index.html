@@ -309,7 +309,7 @@ const isHidden = id => !!(hidden[id] && hidden[id].on);
 async function pull() {
   if (!STORE) return;
   try {
-    const r = await fetch(STORE.get, { cache: 'no-store' });
+    const r = await fetch(STORE.get + '?_=' + Date.now(), { cache: 'no-store' });
     if (r.status === 404 || r.status === 400) { setSync('ok'); return; }
     if (!r.ok) throw new Error(r.status);
     const doc = await r.json();
@@ -318,19 +318,25 @@ async function pull() {
     setSync('ok');
   } catch (e) { setSync('err'); }
 }
-let pushTimer = null;
-function push() { clearTimeout(pushTimer); pushTimer = setTimeout(doPush, 700); }
-async function doPush() {
+let pushTimer = null, pushing = false, pushAgain = false;
+function push() { clearTimeout(pushTimer); pushTimer = setTimeout(doPush, 1500); }   // coalesce bursts: the store rate-limits fast writes
+async function doPush(attempt = 0) {
   if (!STORE) return;
+  if (pushing) { pushAgain = true; return; }
+  pushing = true; setSync('saving');
   try {
-    setSync('saving');
-    try { const r = await fetch(STORE.get, { cache: 'no-store' }); if (r.ok) { const doc = await r.json(); mergeInto(people, cleanPeople(doc.people)); mergeInto(hidden, cleanHidden(doc.hidden)); } } catch (e) {}   // never drop a friend's newer edit
+    try { const r = await fetch(STORE.get + '?_=' + Date.now(), { cache: 'no-store' }); if (r.ok) { const doc = await r.json(); mergeInto(people, cleanPeople(doc.people)); mergeInto(hidden, cleanHidden(doc.hidden)); } } catch (e) {}   // never drop a friend's newer edit
     const w = await fetch(STORE.put, { method: STORE.method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ people, hidden, v: 3, updated: new Date().toISOString() }) });
     if (!w.ok) throw new Error(w.status);
     ls.set('twpeople', people); ls.set('twhidden', hidden); render(); setSync('ok');
-  } catch (e) { setSync('err'); }
+  } catch (e) {
+    if (attempt < 3) { setSync('retry'); pushing = false; setTimeout(() => doPush(attempt + 1), 4000 * (attempt + 1)); return; }
+    setSync('err');
+  }
+  pushing = false;
+  if (pushAgain) { pushAgain = false; push(); }
 }
-function setSync(s) { syncState = s; const el = document.getElementById('sync'); if (el) { el.textContent = s === 'ok' ? 'Synced with the group' : s === 'saving' ? 'Saving…' : s === 'err' ? 'Offline: showing your last copy, will retry' : ''; el.className = 'sync' + (s === 'err' ? ' err' : ''); } }
+function setSync(s) { syncState = s; const el = document.getElementById('sync'); if (el) { el.textContent = s === 'ok' ? 'Synced with the group' : s === 'saving' ? 'Saving…' : s === 'retry' ? 'Saving… (store busy, retrying)' : s === 'err' ? 'Could not reach the group store. Your changes are kept on this device and will be sent on the next change or reload.' : ''; el.className = 'sync' + (s === 'err' ? ' err' : ''); } }
 function saveLocal() { if (ME) mine().t = Date.now(); ls.set('twpeople', people); ls.set('twhidden', hidden); ls.set('twme', ME); push(); }
 function ensureMe() {
   if (ME) return true;
@@ -422,7 +428,9 @@ function rateRow(d) {
 function card(d, i) {
   const open = state.open.has(d.id), pk = picks();
   const facs = d.fac.filter(f => f !== 'TOWELS' && f !== 'BEDLINEN').map(f => `<span>${facLabel[f] || f}</span>`).join('');
-  const rooms = d.rooms.map(r => `<div class="rm"><b>${esc(r.n)}</b><ul>${r.d.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`).join('');
+  const bookable = new Set(d.roomPrices.map(r => r.n.toLowerCase())), rl = d.rooms.filter(r => bookable.has(r.n.toLowerCase()));
+  const roomsShown = rl.length ? rl : d.rooms;
+  const rooms = roomsShown.map(r => `<div class="rm"><b>${esc(r.n)}</b>${(() => { const rp = d.roomPrices.find(x => x.n.toLowerCase() === r.n.toLowerCase()); return rp ? ` <span class="num" style="color:var(--muted)">· ${eur(rp.pp)} pp</span>` : ''; })()}<ul>${r.d.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`).join('');
   const groups = d.facs.map(g => `<h4>${groupLabel[g.k] || g.k}</h4><ul>${g.v.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`).join('');
   const thumb = d.imgs[0] ? `<div class="thumbwrap"><img class="thumb" src="${d.imgs[0]}" alt="" loading="lazy" referrerpolicy="no-referrer" data-gal="${d.id}" data-i="0"><small>${d.imgs.length} photos</small></div>` : `<div class="thumb"></div>`;
   const priceTable = `<table><tr><th>Room for ${GROUP}</th><th>pp</th><th>Total</th><th>Stay share pp</th></tr>${d.roomPrices.map(r => `<tr><td>${esc(r.n)}</td><td class="num">${eur(r.pp)}</td><td class="num">${eur(r.pp * GROUP)}</td><td class="num">${eur(r.pp - FIXED)}</td></tr>`).join('')}</table>
@@ -448,7 +456,7 @@ function card(d, i) {
       <div class="strip">${d.imgs.map((f, k) => `<img src="${f}" alt="" loading="lazy" referrerpolicy="no-referrer" data-gal="${d.id}" data-i="${k}">`).join('')}</div>
       <div><h4>Prices for your group of ${GROUP}</h4>${priceTable}
         <h4>About</h4><p>${esc(d.desc)}</p><p><a href="${d.url}?NumberOfParticipants=3&TransportType=EV&Duration=7" target="_blank" rel="noopener">Open in the official simulator ↗</a></p></div>
-      <div><h4>Rooms (${d.rooms.length} type${d.rooms.length === 1 ? '' : 's'})</h4>${rooms || '<p style="color:var(--muted)">See simulator</p>'}${groups}</div>
+      <div><h4>Rooms you can book for ${GROUP} (${roomsShown.length})</h4>${rooms || '<p style="color:var(--muted)">See simulator</p>'}${groups}</div>
     </div>` : ''}
   </article>`;
 }
@@ -554,7 +562,7 @@ function toast(msg) { const t = document.getElementById('toast'); t.textContent 
 initMap();
 render();
 pull();
-setInterval(pull, 20000);
+setInterval(pull, 30000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) pull(); });
 </script>
 </body>
