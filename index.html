@@ -155,7 +155,8 @@ td img{width:150px;height:100px;object-fit:cover;border-radius:6px;cursor:zoom-i
   .card{grid-template-columns:96px 1fr auto;scroll-margin-top:260px}
   .thumb{width:96px;height:72px}
   .card .rank{display:none}
-  .card .kv,.card .fac,.card .rate{grid-column:2/-1}
+  .card .kv,.card .fac,.card .rate,.card .notes{grid-column:2/-1}
+  .card .acts{flex-wrap:wrap;justify-content:flex-end}
   .card .price{grid-column:2/3}
   .card .acts{grid-column:3/4;grid-row:1}
   .detail{grid-template-columns:1fr}
@@ -275,10 +276,11 @@ const state = {};
 const STORE = { get: "https://api.npoint.io/4ea14f599caa0990bf8b", put: "https://api.npoint.io/4ea14f599caa0990bf8b", method: "POST" };   // {get:url, put:url, method:'PUT'|'POST'} shared JSON document for the group
 const FIXED = 705;         // €316 festival ticket + €389 ski pass, per person, in every package
 const DATA = JSON.parse(document.getElementById('data').textContent).map(d => {
+  d.mealFull = d.meal || 'Self catering';
   if (/Woodpecker/.test(d.name)) d.meal = 'Fully catered: breakfast, afternoon tea, 6 dinners with wine';
   if (!d.meal || /^Self/i.test(d.meal)) d.meal = 'Self catering';
   if (/^Bed and/i.test(d.meal)) d.meal = 'Bed & breakfast';
-  if (/all inclusive|all-in/i.test(d.meal) || d.meal.length > 70) d.meal = /all inclusive|all-in|Club Med/i.test(d.meal + d.name) ? 'All inclusive (meals & drinks)' : d.meal.slice(0, 60) + '…';
+  if (/all inclusive|all-in/i.test(d.meal) || d.meal.length > 70) d.meal = /all inclusive|all-in|Club Med/i.test(d.meal + d.name) ? 'All inclusive (meals & drinks)' : d.meal.slice(0, 60) + '…';   // card label only; full text in Details
   d.walk = d.nightWalk == null ? 15 : d.nightWalk;
   d.liftWalk = d.bergWalk == null ? 15 : Math.min(d.bergWalk, d.sigWalk);   // nearest gondola to the mountain stages
   d.pair = d.plan === 'pair';                 // 2 double rooms = 4 packages, cost shared by 3
@@ -298,21 +300,38 @@ const ls = { get(k, fb) { try { const v = localStorage.getItem(k); return v == n
 
 // ----- shared state: people = { name: { r:{id:1-5}, p:[ids], t:ms } }, synced to the group's JSON document -----
 let ME = ls.get('twme', '');
-let people = ls.get('twpeople', {});
+let people = {}; { const raw = ls.get('twpeople', {}); for (const [n, v] of Object.entries(raw)) if (v && typeof v === 'object') people[n] = normPerson(v); }   // upgrades this device's older copy in place
 let hidden = ls.get('twhidden', {});   // id -> {on:true|false, by:name, t:ms}; newest t wins, shared with the group
 let syncState = 'idle';
-function mine() { if (!ME) return { r: {}, p: [], c: {}, t: 0 }; people[ME] = people[ME] || { r: {}, p: [], c: {}, t: 0 }; people[ME].c = people[ME].c || {}; return people[ME]; }
+// people[name] = { r:{id:{s,t}}, c:{id:{v,t}}, p:{id:{on,t}}, t }  — s=0 / v='' / on=false are tombstones so removals sync too
+const blank = () => ({ r: {}, p: {}, c: {}, t: 0 });
+function mine() { if (!ME) return blank(); people[ME] = normPerson(people[ME] || blank()); return people[ME]; }
+function normPerson(v) {
+  const t0 = +v.t || 0, o = { r: {}, p: {}, c: {}, t: t0 };
+  for (const [id, x] of Object.entries(v.r || {})) { const s = typeof x === 'object' ? +x.s : +x, t = typeof x === 'object' ? +x.t || t0 : t0; if (DATA.some(d => d.id === +id) && s >= 0 && s <= 5) o.r[id] = { s, t }; }
+  for (const [id, x] of Object.entries(v.c || {})) { const val = typeof x === 'object' ? String(x.v || '') : String(x || ''), t = typeof x === 'object' ? +x.t || t0 : t0; if (DATA.some(d => d.id === +id)) o.c[id] = { v: val.trim().slice(0, 500), t }; }
+  if (Array.isArray(v.p)) { for (const id of v.p) if (DATA.some(d => d.id === +id)) o.p[id] = { on: true, t: t0 }; }
+  else for (const [id, x] of Object.entries(v.p || {})) if (DATA.some(d => d.id === +id) && x && typeof x === 'object') o.p[id] = { on: !!x.on, t: +x.t || t0 };
+  return o;
+}
+const myRating = (me, id) => (me.r[id] && me.r[id].s) || 0;
+const myNoteOf = (me, id) => (me.c[id] && me.c[id].v) || '';
+const myPick = (me, id) => !!(me.p[id] && me.p[id].on);
 function cleanPeople(obj) {
   const out = {};
-  for (const [name, v] of Object.entries(obj || {})) {
-    if (!v || typeof v !== 'object' || !name) continue;
-    const c = { r: {}, p: [], c: {}, t: +v.t || 0 };
-    for (const [id, s] of Object.entries(v.c || {})) if (DATA.some(d => d.id === +id) && typeof s === 'string' && s.trim()) c.c[id] = s.trim().slice(0, 500);
-    for (const [id, s] of Object.entries(v.r || {})) if (DATA.some(d => d.id === +id) && s >= 1 && s <= 5) c.r[id] = +s;
-    c.p = (Array.isArray(v.p) ? v.p : []).map(Number).filter(id => DATA.some(d => d.id === id));
-    out[name.slice(0, 20)] = c;
-  }
+  for (const [name, v] of Object.entries(obj || {})) { if (!v || typeof v !== 'object' || !name) continue; out[name.slice(0, 20)] = normPerson(v); }
   return out;
+}
+// field-level merge: for each person, each rating / comment / pick keeps whichever device wrote it most recently
+function mergePeople(target, incoming) {
+  let changed = false;
+  for (const [n, v] of Object.entries(incoming)) {
+    if (!target[n]) { target[n] = v; changed = true; continue; }
+    const t = normPerson(target[n]); target[n] = t;
+    for (const f of ['r', 'c', 'p']) for (const [id, x] of Object.entries(v[f])) { if (!t[f][id] || x.t > t[f][id].t) { t[f][id] = x; changed = true; } }
+    if (v.t > t.t) t.t = v.t;
+  }
+  return changed;
 }
 function mergeInto(target, incoming) { let changed = false; for (const [n, v] of Object.entries(incoming)) { if (!target[n] || v.t > (target[n].t || 0)) { target[n] = v; changed = true; } } return changed; }
 function cleanHidden(obj) { const out = {}; for (const [id, v] of Object.entries(obj || {})) if (DATA.some(d => d.id === +id) && v && typeof v === 'object') out[id] = { on: !!v.on, by: String(v.by || '').slice(0, 20), t: +v.t || 0 }; return out; }
@@ -324,7 +343,7 @@ async function pull() {
     if (r.status === 404 || r.status === 400) { setSync('ok'); return; }
     if (!r.ok) throw new Error(r.status);
     const doc = await r.json();
-    const c1 = mergeInto(people, cleanPeople(doc.people)), c2 = mergeInto(hidden, cleanHidden(doc.hidden));
+    const c1 = mergePeople(people, cleanPeople(doc.people)), c2 = mergeInto(hidden, cleanHidden(doc.hidden));
     if (c1 || c2) { ls.set('twpeople', people); ls.set('twhidden', hidden); render(); }
     setSync('ok');
   } catch (e) { setSync('err'); }
@@ -336,7 +355,7 @@ async function doPush(attempt = 0) {
   if (pushing) { pushAgain = true; return; }
   pushing = true; setSync('saving');
   try {
-    try { const r = await fetch(STORE.get + '?_=' + Date.now(), { cache: 'no-store' }); if (r.ok) { const doc = await r.json(); mergeInto(people, cleanPeople(doc.people)); mergeInto(hidden, cleanHidden(doc.hidden)); } } catch (e) {}   // never drop a friend's newer edit
+    try { const r = await fetch(STORE.get + '?_=' + Date.now(), { cache: 'no-store' }); if (r.ok) { const doc = await r.json(); mergePeople(people, cleanPeople(doc.people)); mergeInto(hidden, cleanHidden(doc.hidden)); } } catch (e) {}   // never drop a friend's newer edit
     const w = await fetch(STORE.put, { method: STORE.method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ people, hidden, v: 3, updated: new Date().toISOString() }) });
     if (!w.ok) throw new Error(w.status);
     ls.set('twpeople', people); ls.set('twhidden', hidden); render(); setSync('ok');
@@ -351,21 +370,23 @@ function setSync(s) { syncState = s; const el = document.getElementById('sync');
 function saveLocal() { if (ME) mine().t = Date.now(); ls.set('twpeople', people); ls.set('twhidden', hidden); ls.set('twme', ME); push(); }
 function ensureMe() {
   if (ME) return true;
-  const n = (prompt('Your first name (so your friends can tell whose ratings are whose):') || '').trim().slice(0, 20);
+  let n = (prompt('Your first name (use the same name on every device):') || '').trim().slice(0, 20);
   if (!n) return false;
+  const same = Object.keys(people).find(k => k.toLowerCase() === n.toLowerCase()); if (same) n = same;
   ME = n; mine(); saveLocal(); return true;
 }
 const COLORS = ['#1B6FD1', '#D63A6A', '#1F8A5B', '#B7791F', '#7A3BD6', '#0E9AA7'];
 const colorOf = name => COLORS[[...Object.keys(people)].sort().indexOf(name) % COLORS.length] || COLORS[0];
-const picks = () => new Set(mine().p);
-function ratingsFor(id) { return Object.entries(people).filter(([n, v]) => v.r && v.r[id]).map(([n, v]) => ({ n, s: v.r[id] })); }
-function notesFor(id) { return Object.entries(people).filter(([n, v]) => v.c && v.c[id]).map(([n, v]) => ({ n, c: v.c[id] })); }
+const picks = () => new Set(Object.entries(mine().p).filter(([id, x]) => x.on).map(([id]) => +id));
+function ratingsFor(id) { return Object.entries(people).filter(([n, v]) => v.r && v.r[id] && v.r[id].s > 0).map(([n, v]) => ({ n, s: v.r[id].s })); }
+function notesFor(id) { return Object.entries(people).filter(([n, v]) => v.c && v.c[id] && v.c[id].v).map(([n, v]) => ({ n, c: v.c[id].v })); }
+const countOf = (v, f) => Object.values(v[f] || {}).filter(x => f === 'r' ? x.s > 0 : f === 'c' ? !!x.v : x.on).length;
 function groupAvg(id) { const r = ratingsFor(id); return r.length ? r.reduce((a, b) => a + b.s, 0) / r.length : null; }
 
 function renderPeople() {
-  const names = Object.keys(people).filter(n => n === ME || Object.keys(people[n].r || {}).length || Object.keys(people[n].c || {}).length || (people[n].p || []).length);
+  const names = Object.keys(people).filter(n => n === ME || countOf(people[n], 'r') || countOf(people[n], 'c') || countOf(people[n], 'p'));
   const el = document.getElementById('people');
-  const chips = names.map(n => `<span class="who${n === ME ? ' me' : ''}"><i style="background:${colorOf(n)}"></i>${esc(n)}${n === ME ? ' (you)' : ''} <small>· ${Object.keys(people[n].r || {}).length} rated · ${Object.keys(people[n].c || {}).length} comments · ${(people[n].p || []).length} ★</small></span>`).join('');
+  const chips = names.map(n => `<span class="who${n === ME ? ' me' : ''}"><i style="background:${colorOf(n)}"></i>${esc(n)}${n === ME ? ' (you)' : ''} <small>· ${countOf(people[n], 'r')} rated · ${countOf(people[n], 'c')} comments · ${countOf(people[n], 'p')} ★</small></span>`).join('');
   el.innerHTML = `<span class="eyebrow">Rating together</span>${chips || '<small>Nobody has rated yet.</small>'}<small>${ME ? `You are <b>${esc(ME)}</b>.` : ''} Rate with the stars on each card; everyone sees it within seconds.</small>${ME ? '' : '<button class="btn" id="setme">Set my name</button>'}<span class="sync" id="sync"></span>`;
   const b = document.getElementById('setme'); if (b) b.onclick = () => { ensureMe(); render(); };
   setSync(syncState);
@@ -430,11 +451,11 @@ function jump(id) {
 }
 
 function rateRow(d) {
-  const my = mine().r[d.id] || 0;
+  const my = myRating(mine(), d.id);
   const others = ratingsFor(d.id).filter(x => x.n !== ME).map(x => `<span class="who"><i style="background:${colorOf(x.n)}"></i>${esc(x.n)} ${x.s}★</span>`).join('');
   const avg = groupAvg(d.id);
   const hid = isHidden(d.id) ? `<span class="who" style="color:var(--fest)">Hidden by ${esc(hidden[d.id].by || 'someone')}</span>` : '';
-  const myNote = mine().c[d.id] || '';
+  const myNote = myNoteOf(mine(), d.id);
   const notes = notesFor(d.id).filter(x => x.n !== ME || !state.noteOpen.has(d.id)).map(x => `<div class="note"><i style="background:${colorOf(x.n)}"></i><b>${esc(x.n)}:</b><span>${esc(x.c)}</span></div>`).join('');
   const form = state.noteOpen.has(d.id) ? `<div class="noteform"><textarea id="nt${d.id}" data-notetext="${d.id}" placeholder="Why this grade? e.g. too far at night, great balcony" maxlength="500">${esc(myNote)}</textarea><button class="btn primary" data-notesave="${d.id}">Save</button><button class="btn" data-notecancel="${d.id}">Cancel</button></div>` : '';
   return `<div class="rate">${hid}<span>${ME ? esc(ME) : 'You'}:</span><span class="r5" data-rate="${d.id}">${[1,2,3,4,5].map(n => `<button class="${n <= my ? 'on' : ''}" data-n="${n}" title="${n} star${n > 1 ? 's' : ''}">★</button>`).join('')}</span><button class="notebtn" data-noteopen="${d.id}">${myNote ? '✎ Edit my comment' : '＋ Comment'}</button>${others}${avg ? `<span class="avg">Group ${avg.toFixed(1)}★ (${ratingsFor(d.id).length})</span>` : ''}</div>${notes || form ? `<div class="notes">${notes}${form}</div>` : ''}`;
@@ -472,7 +493,7 @@ function card(d, i) {
     ${open ? `<div class="detail">
       <div class="strip">${d.imgs.map((f, k) => `<img src="${f}" alt="" loading="lazy" referrerpolicy="no-referrer" data-gal="${d.id}" data-i="${k}">`).join('')}</div>
       <div><h4>Prices for your group of ${GROUP}</h4>${priceTable}${priceNote}
-        <h4>About</h4><p>${esc(d.desc)}</p><p><a href="${d.url}?NumberOfParticipants=3&TransportType=EV&Duration=7" target="_blank" rel="noopener">Open in the official simulator ↗</a></p></div>
+        <h4>About</h4><p>${esc(d.desc)}</p><h4>Meal plan</h4><p>${esc(d.mealFull)}</p><p><a href="${d.url}?NumberOfParticipants=3&TransportType=EV&Duration=7" target="_blank" rel="noopener">Open in the official simulator ↗</a></p></div>
       <div><h4>${d.pair ? 'Double rooms you can book (take 2)' : `Rooms you can book for ${GROUP}`} (${roomsShown.length})</h4>${rooms || '<p style="color:var(--muted)">See simulator</p>'}${groups}</div>
     </div>` : ''}
   </article>`;
@@ -561,14 +582,14 @@ document.getElementById('list').addEventListener('click', e => {
   if (x) { if (!ensureMe()) return; const id = +x.dataset.hide; hidden[id] = { on: !isHidden(id), by: ME, t: Date.now() }; saveLocal(); render(); }
   const no = e.target.closest('[data-noteopen]'), ns = e.target.closest('[data-notesave]'), nc = e.target.closest('[data-notecancel]');
   if (no) { if (!ensureMe()) return; const id = +no.dataset.noteopen; state.noteOpen.add(id); render(); const t = document.getElementById('nt' + id); if (t) { t.focus(); t.selectionStart = t.value.length; } }
-  if (ns) { const id = +ns.dataset.notesave; const t = document.getElementById('nt' + id); const v = (t ? t.value : '').trim().slice(0, 500); const me = mine(); if (v) me.c[id] = v; else delete me.c[id]; state.noteOpen.delete(id); saveLocal(); render(); }
+  if (ns) { const id = +ns.dataset.notesave; const t = document.getElementById('nt' + id); const v = (t ? t.value : '').trim().slice(0, 500); const me = mine(); me.c[id] = { v, t: Date.now() }; state.noteOpen.delete(id); saveLocal(); render(); }
   if (nc) { state.noteOpen.delete(+nc.dataset.notecancel); render(); }
-  if (p) { if (!ensureMe()) return; const id = +p.dataset.pick, me = mine(); me.p = me.p.includes(id) ? me.p.filter(x => x !== id) : [...me.p, id]; saveLocal(); render(); }
+  if (p) { if (!ensureMe()) return; const id = +p.dataset.pick, me = mine(); me.p[id] = { on: !myPick(me, id), t: Date.now() }; saveLocal(); render(); }
   if (m) { const id = +m.dataset.more; state.open.has(id) ? state.open.delete(id) : state.open.add(id); render(); }
-  if (r) { if (!ensureMe()) return; const id = +r.parentElement.dataset.rate, n = +r.dataset.n, me = mine(); if (me.r[id] === n) delete me.r[id]; else me.r[id] = n; saveLocal(); render(); }
+  if (r) { if (!ensureMe()) return; const id = +r.parentElement.dataset.rate, n = +r.dataset.n, me = mine(); me.r[id] = { s: myRating(me, id) === n ? 0 : n, t: Date.now() }; saveLocal(); render(); }
 });
 document.getElementById('cmp').onclick = () => { document.getElementById('compare').classList.add('on'); document.getElementById('compare').scrollIntoView({ behavior:'smooth', block:'start' }); };
-document.getElementById('clear').onclick = () => { if (!ME) return; const me = mine(); me.p = []; me.r = {}; me.c = {}; saveLocal(); render(); };
+document.getElementById('clear').onclick = () => { if (!ME || !confirm('Clear all your ratings, comments and shortlist on every device?')) return; const me = mine(), now = Date.now(); for (const id in me.r) me.r[id] = { s: 0, t: now }; for (const id in me.c) me.c[id] = { v: '', t: now }; for (const id in me.p) me.p[id] = { on: false, t: now }; saveLocal(); render(); };
 document.getElementById('share').onclick = async () => { try { await navigator.clipboard.writeText(location.origin + location.pathname); toast('Link copied. Send it to the group.'); } catch (e) { prompt('Copy this link:', location.href); } };
 function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 2200); }
 
