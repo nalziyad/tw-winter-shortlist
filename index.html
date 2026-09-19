@@ -37,6 +37,8 @@ img{max-width:100%}
 .count{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
 .count .t{font-family:Outfit;font-size:28px;font-weight:600;letter-spacing:-.01em}
 .breakdown{display:flex;flex-wrap:wrap;gap:6px 18px;padding:10px 12px;margin-top:12px;border-radius:10px;background:var(--surface2);font-size:14px}
+.bdsum{display:none}
+.bd[open] .bdsum{display:none}
 .breakdown b{font-weight:600}
 .breakdown span{color:var(--muted)}
 .controls{display:grid;grid-template-columns:1fr;gap:12px;padding-block:14px;position:sticky;top:0;background:var(--ground);z-index:5;border-bottom:1px solid var(--line)}
@@ -104,7 +106,7 @@ select,input[type=text]{font:inherit;padding:5px 8px;border-radius:8px;border:1p
 .kv .ok{color:var(--good)}
 .price b{font-size:19px}
 .price small{color:var(--muted);display:block}
-.fac{display:flex;flex-wrap:wrap;gap:4px}
+.fac{display:flex;flex-wrap:wrap;gap:4px;grid-column:3/6}
 .fac span{font-size:11px;font-weight:600;letter-spacing:.04em;padding:2px 6px;border-radius:4px;background:var(--surface2);color:var(--muted)}
 .acts{display:flex;gap:6px;align-items:center}
 .star{border:1px solid var(--line);background:var(--surface);border-radius:8px;width:38px;height:36px;font-size:18px;line-height:1;color:var(--muted)}
@@ -194,7 +196,12 @@ td img{width:150px;height:100px;object-fit:cover;border-radius:6px;cursor:zoom-i
   .controls .sl-wrap{display:none}
   .controls.fopen .sl-wrap{display:contents}
   #ftoggle{display:inline-block}
-  .breakdown{font-size:13px}
+  .breakdown{font-size:13px;margin-top:6px}
+  .bdsum{display:list-item;margin-top:10px;font-weight:600;color:var(--accent);cursor:pointer}
+  .bd[open] .bdsum{display:list-item}
+  .top .sub{display:none}
+  .top h1{font-size:24px}
+  .count .t{font-size:24px}
   .card{grid-template-columns:1fr auto;scroll-margin-top:110px;padding:10px}
   .card>*{grid-column:1/-1}
   .thumbwrap,.thumb,.card .rank{display:none}
@@ -234,6 +241,7 @@ td img{width:150px;height:100px;object-fit:cover;border-radius:6px;cursor:zoom-i
     </div>
   </header>
 
+  <details class="bd" id="bd"><summary class="bdsum">What every price includes</summary>
   <div class="breakdown num">
     <div><b>Every package price includes:</b></div>
     <div>7-day Festival Ticket <b>€316</b> <span>pp</span></div>
@@ -242,6 +250,7 @@ td img{width:150px;height:100px;object-fit:cover;border-radius:6px;cursor:zoom-i
     <div>Comfort Pass upgrade <b>+€390</b> <span>pp — included in every price below (toggle in the filters)</span></div>
     <div><span>"2 double rooms" hotels: 4 packages shared by 3, so one ticket + ski pass (€705) is unused; Comfort Pass counted for 3 only.</span></div>
   </div>
+  </details>
 
   <div class="people" id="people"></div>
 
@@ -577,7 +586,7 @@ function card(d, i) {
       <button class="more" data-map="${d.id}" title="Show on the map">📍</button>
       <button class="hide${isHidden(d.id) ? ' restore' : ''}" data-hide="${d.id}" title="${isHidden(d.id) ? 'Put it back in the list for everyone' : 'Remove from the list for everyone (can be restored)'}">${isHidden(d.id) ? 'Restore' : '✕ Hide'}</button>
     </div>
-    <div class="fac" style="grid-column:3/6">${facs}</div>
+    <div class="fac">${facs}</div>
     ${rateRow(d)}
     ${open ? `<div class="detail">
       <div class="strip">${d.imgs.map((f, k) => `<img src="${f}" alt="" loading="lazy" referrerpolicy="no-referrer" data-gal="${d.id}" data-i="${k}">`).join('')}</div>
@@ -713,6 +722,7 @@ function toast(msg) { const t = document.getElementById('toast'); t.textContent 
   tick(); setInterval(tick, 1000);
 })();
 
+if (innerWidth > 820) document.getElementById('bd').open = true;
 initMap();
 render();
 pull();
