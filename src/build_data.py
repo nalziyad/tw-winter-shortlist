@@ -18,7 +18,7 @@ REVEL = [
       revelDesc="Located beside the resort's chairlifts, L'Éclose offers well appointed apartments and hotel, a heated indoor pool, hammam, sauna and massage cabins. Enjoy convenient access to 250 km of slopes, with restaurants and shops nearby.",
       revelRoom=["Double room type A (Chambre Double - 23m²)"],
       lat=45.088609, lng=6.071439, address="184 Rue du 93ème RAM, L'Éclose",
-      extras="Heated indoor pool, hammam, sauna, massage cabins.", notes=["Priced per double room for two. A group of 3 or 4 needs two rooms."]),
+      extras="Heated indoor pool, hammam, sauna, massage cabins.", notes=["Priced per double room for two: three people need two rooms, so four places."]),
  dict(id=6221801, name="Apartment Le Hameau de Clotaire B23", kind="Apartment", aed=13500, basis=4,
       basisText="Apartment based on four adults", walkM=800, walkMin=12,
       revelDesc="Located in Alpe d'Huez's Cognet quarter, this 70sqm apartment with two double bedrooms, a sleeping alcove and two bathrooms. Enjoy mountain views, an east-facing balcony, fully equipped kitchen, indoor parking and ski locker, plus access to the residence's pool, sauna and hammam.",

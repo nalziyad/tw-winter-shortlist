@@ -73,7 +73,6 @@ section{margin-top:22px}
 .price{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:baseline}
 .price b{font-family:Outfit;font-size:26px;font-weight:700}
 .price small{color:var(--muted)}
-.unconf{font-size:13px;color:var(--warn);font-weight:600}
 .facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .kv{font-size:12px;color:var(--muted)}
 .kv b{display:block;color:var(--ink);font-size:15px;font-weight:600}
@@ -153,10 +152,9 @@ td.best{color:var(--good);font-weight:600}
 
   <div class="sticky">
     <div class="bar">
-      <span class="lbl">We are</span>
-      <button class="chip" data-group="3" aria-pressed="false">3 people</button>
-      <button class="chip" data-group="4" aria-pressed="true">4 people</button>
+      <span class="lbl">3 people · 4 places paid</span>
       <button class="chip" id="comfort" aria-pressed="true">Comfort Pass +€390</button>
+      <button class="chip" id="resell" aria-pressed="true">Sell the 4th pass −€705</button>
       <button class="chip" id="card" aria-pressed="false">Paying by card +3%</button>
       <small id="pricenote"></small>
     </div>
@@ -201,6 +199,7 @@ td.best{color:var(--good);font-weight:600}
         <li>Card or payment-link payments cost 3% extra; bank transfer does not.</li>
         <li>Comfort upgrade €390 pp, subject to availability. Booking needs passport copies.</li>
         <li>Festival pass value inside the package: €705 pp (ski pass €389 + 7-day ticket €316).</li>
+        <li><b>Agreed with Revel:</b> you pay for all 4 places, upgrade only 3 passes to Comfort, and may sell the 4th pass (General Access + ski pass). Its name change has to be done before 16 January 2027.</li>
       </ul><p class="src" style="margin:8px 0 0">Revel Tours · +971 567741027 · +971 501673029 · info@reveltravels.com</p></div>
     </div>
   </section>
@@ -223,7 +222,8 @@ const NAMES = ['Najd', 'Ghalo', 'Ahad', 'Shahtot'];
 const NIGHT = [45.0902, 6.0740];   // Rond-Point de l'Europe: the roundabout in front of Les Bergers
 const BERG = [45.09016, 6.07741];  // Marmottes gondola base, Les Bergers
 const SIG = [45.0973, 6.0690];     // Signal lift base, Rond-Point des Pistes
-const state = { group: 4, comfort: true, card: false, noteOpen: new Set() };
+const GROUP = 3, PLACES = 4, PASS_EUR = 705;   // three travellers pay for four places; the spare festival + ski pass (€705) can be sold on
+const state = { comfort: true, resell: true, card: false, noteOpen: new Set() };
 
 const aed = n => 'AED ' + Math.round(n).toLocaleString('en-GB');
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -237,11 +237,10 @@ PACKAGES.forEach(p => { p.berg = walkMin(p, BERG); p.sig = walkMin(p, SIG); });
 
 // ----- price: Revel quotes per person for a full unit (4 adults per apartment, 2 per hotel room) -----
 function quote(p) {
-  const units = p.basis === 2 ? Math.ceil(state.group / 2) : 1;          // hotel: one double room per two people
-  const shares = units * p.basis;                                         // places paid for
-  let total = p.aed * shares + (state.comfort ? COMFORT_EUR * ROE * state.group : 0);
-  if (state.card) total *= CARD;
-  return { total, pp: total / state.group, shares, units, exact: shares === state.group };
+  let paid = p.aed * PLACES + (state.comfort ? COMFORT_EUR * ROE * GROUP : 0);   // what Revel is paid: 4 places, Comfort for the 3 travellers only
+  if (state.card) paid *= CARD;
+  const back = state.resell ? PASS_EUR * ROE : 0;                                 // spare pass sold at its listed value
+  return { paid, back, total: paid - back, pp: (paid - back) / GROUP };
 }
 
 // ----- shared state: people[name] = { r:{id:{s,t}}, c:{id:{v,t}}, t }; every entry carries its own timestamp so devices merge -----
@@ -320,13 +319,13 @@ function card(p, i) {
   const avg = avgOf(p.id);
   const notes = notesFor(p.id).filter(x => x.n !== ME || !state.noteOpen.has(p.id)).map(x => `<div class="cmt"><i style="background:${COLORS[x.n]}"></i><b>${x.n}:</b><span>${esc(x.c)}</span></div>`).join('');
   const form = state.noteOpen.has(p.id) ? `<div class="noteform"><textarea id="nt${p.id}" maxlength="500" placeholder="Why this grade?">${esc(myNote)}</textarea><button class="btn primary" data-notesave="${p.id}">Save</button><button class="btn" data-notecancel="${p.id}">Cancel</button></div>` : '';
-  const shareNote = q.exact ? '' : `<div class="unconf">${p.basis === 2 ? `${q.units} double rooms = ${q.shares} places for ${state.group} people.` : `Priced for 4 adults: ${q.shares} shares split over ${state.group}.`} Not confirmed by Revel, ask for the ${state.group}-person price.</div>`;
+  const shareNote = `<div class="src num">${p.basis === 2 ? '2 double rooms' : '1 apartment'} = 4 × ${aed(p.aed)}${state.comfort ? ` + 3 × Comfort ${aed(COMFORT_EUR * ROE)}` : ''}${state.card ? ' + 3% card fee' : ''} = <b>${aed(q.paid)}</b> to Revel${state.resell ? `, minus ${aed(q.back)} for the 4th pass` : ''}.</div>`;
   return `<article class="card" id="c${p.id}">
     <div class="photos">${p.imgs.map((f, k) => `<img src="${f}" alt="${esc(p.name)} photo ${k + 1}" loading="lazy" data-gal="${p.id}" data-i="${k}">`).join('')}</div>
     <div class="body">
       <div class="title"><span class="n num">${i + 1}</span><h3>${esc(p.name)}</h3></div>
       <div class="meta"><span>${p.kind}</span><span>·</span><span>${esc(p.address)}</span><span>·</span><span>${p.imgs.length} photos</span></div>
-      <div class="price"><b class="num">${aed(q.pp)}</b><small>per person${state.comfort ? ' incl. Comfort' : ''}${state.card ? ' + 3% card' : ''}</small><small class="num">≈ €${Math.round(q.pp / ROE).toLocaleString('en-GB')} · ≈ SAR ${Math.round(q.pp * SAR_PER_AED).toLocaleString('en-GB')} · group total ${aed(q.total)}</small></div>
+      <div class="price"><b class="num">${aed(q.pp)}</b><small>each, split by 3${state.comfort ? ', incl. Comfort' : ''}${state.resell ? ', 4th pass sold' : ''}</small><small class="num">≈ €${Math.round(q.pp / ROE).toLocaleString('en-GB')} · ≈ SAR ${Math.round(q.pp * SAR_PER_AED).toLocaleString('en-GB')} · ${aed(q.total)} for the three of you</small></div>
       <div class="src">Revel's quote: ${aed(p.aed)} per person, ${p.basisText.toLowerCase()}, General Access.</div>
       ${shareNote}
       <div class="facts">
@@ -348,7 +347,7 @@ function card(p, i) {
 function renderVerdict() {
   const el = document.getElementById('verdict');
   const rated = PACKAGES.map(p => ({ p, r: ratingsFor(p.id), a: avgOf(p.id) })).filter(x => x.r.length).sort((x, y) => y.a - x.a || y.r.length - x.r.length || quote(x.p).pp - quote(y.p).pp);
-  const waiting = NAMES.slice(0, state.group).filter(n => !people[n] || !ratingsFor0(n));
+  const waiting = NAMES.slice(0, GROUP).filter(n => !people[n] || !ratingsFor0(n));
   if (!rated.length) { el.innerHTML = `<h2>Group verdict</h2><div class="vmeta">No ratings yet. Pick your name, give each of the four a star rating, and the ranking appears here.</div>`; return; }
   const splits = rated.filter(x => x.r.length >= 2 && Math.max(...x.r.map(r => r.s)) - Math.min(...x.r.map(r => r.s)) >= 3);
   el.innerHTML = `<h2>Group verdict</h2>${rated.map((x, i) => `<div class="vrow" data-jump="${x.p.id}"><span class="vrank num">${i + 1}</span><span class="vname">${esc(x.p.name)}</span><span class="vavg num">${x.a.toFixed(1)}★</span>${x.r.map(r => `<span class="who"><i style="background:${COLORS[r.n]}"></i>${r.n} ${r.s}</span>`).join('')}<span class="num" style="margin-left:auto;color:var(--muted)">${aed(quote(x.p).pp)} pp</span></div>`).join('')}
@@ -358,8 +357,9 @@ function renderVerdict() {
 
 function renderCompare() {
   const rows = [
-    ['Per person', p => aed(quote(p).pp), p => quote(p).pp, 'min'],
-    [`Group total (${state.group})`, p => aed(quote(p).total) + (quote(p).exact ? '' : '<br><small style="color:var(--warn)">not confirmed for ' + state.group + '</small>'), p => quote(p).total, 'min'],
+    ['Each of you (÷3)', p => aed(quote(p).pp), p => quote(p).pp, 'min'],
+    ['Paid to Revel', p => aed(quote(p).paid), p => quote(p).paid, 'min'],
+    ['Net after selling the 4th pass', p => state.resell ? aed(quote(p).total) : 'not selling', p => quote(p).total, 'min'],
     ["Revel's quote", p => `${aed(p.aed)} pp, ${p.basis === 2 ? 'per double room for 2' : 'for 4 adults'}`],
     ['Type', p => p.kind],
     ['Size & rooms', p => esc(p.revelRoom[0])],
@@ -383,10 +383,10 @@ function renderCompare() {
 
 function render() {
   document.getElementById('list').innerHTML = PACKAGES.map(card).join('');
-  document.querySelectorAll('[data-group]').forEach(b => b.setAttribute('aria-pressed', +b.dataset.group === state.group));
+  document.getElementById('resell').setAttribute('aria-pressed', state.resell);
   document.getElementById('comfort').setAttribute('aria-pressed', state.comfort);
   document.getElementById('card').setAttribute('aria-pressed', state.card);
-  document.getElementById('pricenote').textContent = `Comfort = €390 × 4.33 = AED ${Math.round(COMFORT_EUR * ROE).toLocaleString('en-GB')} per person.` + (state.group === 3 ? ' With 3 people the unit is still priced for 4.' : '');
+  document.getElementById('pricenote').textContent = `Comfort €390 = ${aed(COMFORT_EUR * ROE)} each, for 3. Spare pass €705 = ${aed(PASS_EUR * ROE)} if sold at its listed value.`;
   renderPeople(); renderVerdict(); renderCompare();
 }
 
@@ -422,7 +422,7 @@ document.addEventListener('keydown', e => { const lb = document.getElementById('
 
 // ----- events -----
 function toast(msg) { const t = document.getElementById('toast'); t.textContent = msg; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 2200); }
-document.querySelectorAll('[data-group]').forEach(b => b.onclick = () => { state.group = +b.dataset.group; render(); });
+document.getElementById('resell').onclick = () => { state.resell = !state.resell; render(); };
 document.getElementById('comfort').onclick = () => { state.comfort = !state.comfort; render(); };
 document.getElementById('card').onclick = () => { state.card = !state.card; render(); };
 document.getElementById('list').addEventListener('click', e => {

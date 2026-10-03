@@ -57,7 +57,7 @@ const PACKAGES = [
   "address": "184 Rue du 93ème RAM, L'Éclose",
   "extras": "Heated indoor pool, hammam, sauna, massage cabins.",
   "notes": [
-   "Priced per double room for two. A group of 3 or 4 needs two rooms."
+   "Priced per double room for two: three people need two rooms, so four places."
   ],
   "imgs": [
    "img/6220637_0.jpg",
